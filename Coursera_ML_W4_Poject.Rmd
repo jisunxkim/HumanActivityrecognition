@@ -1,0 +1,194 @@
+---
+title: "Coursera ML Project - Human Activity Recognition"
+author: "Jisun Kim"
+date: "2/17/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+The movement data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants were collected. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The objective of this practice is to predict the manner in which people did the exerise. Develop a model predicting the "classe" variable of 20 different test cases. 
+
+classes of the exercise
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)
+
+## Data and sources
+the training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
+
+
+## Data Load and Cleaning
+
+```{r Laod Data}
+trainingData_raw <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testingData_raw <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+```{r Load packages}
+if(!require("caret")) install.packages("caret")
+library(caret)
+```
+
+The original data include aggregated for each measures such as minimun, maximun, average etc. They are removed from the data since the columns have N/As and blanks, and don't contribute to the modeling.  
+Remove  columns of which NAs or blank are grether or equal to 90% of data. Also column 1 through 7 have other information such as the subject names, time etc. which are not useful for prediction. They are also eliminated. 
+```{r Exploring Data}
+dim(trainingData_raw)
+dim(testingData_raw)
+#count of non NA data of each column
+col_na_num_train <-  apply(trainingData_raw, 2, function(x) sum(is.na(x) | x == ""))
+col_na_num_test <-  colSums(is.na(testingData_raw) | testingData_raw == "")
+# Columns of which N/A are greater than or equal to 90% to the number of rows
+rem_col_train <- which(col_na_num_train / dim(trainingData_raw)[1] >= 0.9)
+rem_col_test <- which(col_na_num_test / dim(testingData_raw)[1] >= 0.9)
+
+# Remove columns with 90% NAs
+trainingData_ <- trainingData_raw[, -rem_col_train]
+testingData_ <- testingData_raw[, -rem_col_test]
+
+# Remove non-obsvervation columns
+trainingData <- trainingData_[, -c(1:7)]
+testingData <- testingData_[, -c(1:7)]
+dim(trainingData)
+dim(testingData)
+
+table(trainingData_raw$user_name, trainingData_raw$classe)
+```
+
+## Partitioning Training and Testing Data Set
+Divide the cleaned training data to traing and test set to build and test models for the final test of the cleaned testing data. 
+
+```{r}
+trainDataIndex <- createDataPartition(trainingData$classe, p = 0.6, list = FALSE)
+trainData <- trainingData[trainDataIndex, ]
+testData <- trainingData[-trainDataIndex, ]
+dim(trainData)
+dim(testData)
+```
+
+
+## Modeling
+
+
+### Classification Tree
+
+```{r }
+model_ctree <- train(classe ~., data = trainData, method = "rpart")
+
+if (!require("rattle")) install.packages("rattle")
+library(rattle)
+fancyRpartPlot(model_ctree$finalModel)
+pred_ctree <- predict(model_ctree, newdata = testData)
+confMatrix_ctree <- confusionMatrix(pred_ctree, testData$classe)
+confMatrix_ctree
+confMatrix_ctree$overall
+```
+
+### Random Forest
+
+```{r }
+
+model_rf <- train(classe ~., data = trainData, method = "rf")
+
+pred_rf <- predict(model_rf, newdata = testData)
+confMatrix_rf <- confusionMatrix(pred_rf, testData$classe)
+
+print(model_rf)
+plot(model_rf, main = "Accuracy of Random Forest model by number of predictors")
+confMatrix_rf
+confMatrix_rf$overall
+
+```
+```{r}
+# plotting the final model
+plot(model_rf$finalModel, main = "Model error of Random Forest model by number of trees")
+
+# list of variables used for the model
+names(model_rf$finalModel)
+
+# Importance of the variables
+importantVars <- varImp(model_rf)
+importantVars
+```
+
+### Boosted Generalized Linear Model  
+```{r GLM}
+# model_glm <- train(classe ~., data = trainData, method = "glmboost")
+# 
+# pred_glm <- predict(model_glm, newdata = testData)
+# confMatrix_glm <- confusionMatrix(pred_glm, testData$classe)
+# 
+# confMatrix_glm
+# confMatrix_glm$overall
+
+```
+
+### Support Vector Machine
+```{r SVM}
+model_svm <- train(classe ~., data = trainData, method = "svmLinear")
+
+pred_svm <- predict(model_svm, newdata = testData)
+confMatrix_svm <- confusionMatrix(pred_svm, testData$classe)
+
+confMatrix_svm
+confMatrix_svm$overall
+
+
+```
+### Naive Bayes
+```{r }
+model_nb <- train(classe ~., data = trainData, method = "naive_bayes")
+
+pred_nb <- predict(model_nb, newdata = testData)
+confMatrix_nb <- confusionMatrix(pred_nb, testData$classe)
+
+confMatrix_nb
+confMatrix_nb$overall
+```
+
+### Stochastic Gradient Boosting (method = 'gbm')
+```{r }
+garbage <- capture.output(
+model_gbm <- train(classe ~., data = trainData, method = "gbm")
+)
+
+pred_gbm <- predict(model_gbm, newdata = testData)
+confMatrix_gbm <- confusionMatrix(pred_gbm, testData$classe)
+confMatrix_gbm
+confMatrix_gbm$overall
+```
+
+
+## Comparing the performance of the prediction models
+```{r}
+result_table <- data.frame(
+      Models = c("Classification Tree", "Random Forest", "Support Vector Machine", "Naive Bayes", "Stochastic Gradient Boosting"),
+      Accuracy = c(confMatrix_ctree$overall[1], confMatrix_rf$overall[1], confMatrix_svm$overall[1], confMatrix_nb$overall[1], confMatrix_gbm$overall[1])
+      )
+
+library(knitr)
+kable(result_table, caption = "Performance of the Prediction Models")
+```
+Random forest model fits best to the testing set of the training data as accurracy 99.3%. The second model is Gradient Boosting model as 96.2%
+Therefore the random forest model is used to predict the testing data. 
+
+## Predicting the test data set
+
+```{r}
+final_pred_rf <- predict(model_rf, newdata = testingData)
+
+final_pred_rf
+```
+
+## Conclusion
+Five models, "Classification Tree", "Random Forest", "Support Vector Machine", "Naive Bayes", "Stochastic Gradient Boosting", are tested on training data. The best model is random forest as accuracy of 99.3% on the test set out of the training data.
+
+The final prediction of the 20 entities are: 
+B A B A A E D B A A B C B A E E A B B B
